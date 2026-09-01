@@ -80,6 +80,11 @@ export default function Home() {
           <EmptyState />
         )}
       </section>
+
+      <footer className="mt-12 border-t pt-6 text-xs text-muted-foreground">
+        Not affiliated with LinkedIn. Your profile text is sent to the AI model
+        for analysis and is not stored by this app.
+      </footer>
     </main>
   );
 }
