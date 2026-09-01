@@ -1,5 +1,8 @@
 "use client";
 
+import { useState, type ChangeEvent } from "react";
+
+import { cn } from "@/lib/utils";
 import { GOALS, type ProfileInput } from "@/lib/grading";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +30,15 @@ type Props = {
   loading: boolean;
 };
 
+type PdfStatus =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "done"; message: string }
+  | { kind: "error"; message: string };
+
 export function ProfileForm({ value, onChange, onSubmit, loading }: Props) {
+  const [pdf, setPdf] = useState<PdfStatus>({ kind: "idle" });
+
   function set<K extends keyof ProfileInput>(key: K, next: ProfileInput[K]) {
     onChange({ ...value, [key]: next });
   }
@@ -35,13 +46,53 @@ export function ProfileForm({ value, onChange, onSubmit, loading }: Props) {
   const canSubmit =
     Boolean(value.headline.trim() && value.about.trim()) && !loading;
 
+  async function handlePdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setPdf({ kind: "loading" });
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/parse-pdf", { method: "POST", body });
+      const data: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error: unknown }).error)
+            : "Couldn't read that PDF.";
+        throw new Error(message);
+      }
+
+      const fields = (data as { fields?: Partial<ProfileInput> }).fields ?? {};
+      onChange({
+        ...value,
+        headline: fields.headline?.trim() || value.headline,
+        about: fields.about?.trim() || value.about,
+        experience: fields.experience?.trim() || value.experience,
+        skills: fields.skills?.trim() || value.skills,
+      });
+      setPdf({
+        kind: "done",
+        message: "Filled from your PDF — review and edit the fields below.",
+      });
+    } catch (error) {
+      setPdf({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Couldn't read that PDF.",
+      });
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Your LinkedIn profile</CardTitle>
         <CardDescription>
-          Paste each section from your profile. Headline and About are required;
-          the more you add, the sharper the feedback.
+          Paste each section, or start from your LinkedIn PDF export. Headline
+          and About are required; the more you add, the sharper the feedback.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -52,6 +103,31 @@ export function ProfileForm({ value, onChange, onSubmit, loading }: Props) {
             if (canSubmit) onSubmit();
           }}
         >
+          <div className="space-y-2">
+            <Label htmlFor="pdf">Start from your LinkedIn PDF (optional)</Label>
+            <Input
+              id="pdf"
+              type="file"
+              accept="application/pdf"
+              onChange={handlePdf}
+              disabled={loading || pdf.kind === "loading"}
+            />
+            <p
+              className={cn(
+                "text-xs",
+                pdf.kind === "error"
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+              )}
+            >
+              {pdf.kind === "loading"
+                ? "Reading your PDF…"
+                : pdf.kind === "idle"
+                  ? "On LinkedIn: More → Save to PDF. The file is parsed in memory, not stored."
+                  : pdf.message}
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="goal">What is this profile for?</Label>
             <Select
